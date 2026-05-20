@@ -37,5 +37,6 @@ def classification_donut(df: pd.DataFrame) -> go.Figure:
     fig.update_layout(
         margin=dict(l=10, r=10, t=30, b=10),
         showlegend=True,
+        height=400,
     )
     return fig

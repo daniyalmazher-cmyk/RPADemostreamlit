@@ -49,10 +49,10 @@ class ControlRoomSource:
     def load_applications(self, run_id: str | None = None) -> pd.DataFrame:
         if not run_id:
             return pd.DataFrame()
-        raw = self._artifact_bytes(run_id, "applications.csv")
+        raw = self._artifact_bytes(run_id, "report.csv")
         if raw is None:
             return pd.DataFrame()
-        return _parse_csv_bytes(raw)
+        return parse_csv_bytes(raw)
 
     def load_audit(self, run_id: str | None = None) -> dict[str, Any]:
         if not run_id:
@@ -78,7 +78,13 @@ class ControlRoomSource:
 
 # ---- Cached helpers ----------------------------------------------------
 
-def _parse_csv_bytes(raw: bytes) -> pd.DataFrame:
+def parse_csv_bytes(raw: bytes) -> pd.DataFrame:
+    """Parse a KSA-shaped CSV (BOM-encoded UTF-8) into a DataFrame.
+
+    Public so the dispatch code in Cloud Runs / Trigger can reuse it on
+    bytes already downloaded by another cache layer (avoids a second API
+    round-trip).
+    """
     df = pd.read_csv(
         io.BytesIO(raw), encoding="utf-8-sig", dtype=str, keep_default_na=False
     )

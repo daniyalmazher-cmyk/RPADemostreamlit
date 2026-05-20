@@ -57,9 +57,12 @@ def render_detection_details(df: pd.DataFrame) -> None:
     sorted_df = df.sort_values("risk_score", ascending=False)
     options = sorted_df["file_name"].tolist()
     choice = st.selectbox("Pick a file", options=options, key="dlp_detail_file")
-    if choice:
-        row = df[df["file_name"] == choice].iloc[0]
-        _render_detection_detail(row)
+    # Fixed-height scrollable region so the right column stays aligned with
+    # the donut chart on the left (~400 px total, minus subheader + select).
+    with st.container(height=280):
+        if choice:
+            row = df[df["file_name"] == choice].iloc[0]
+            _render_detection_detail(row)
 
 
 def _render_detection_detail(row: pd.Series) -> None:

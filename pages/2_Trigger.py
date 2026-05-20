@@ -14,7 +14,13 @@ from typing import Any
 import httpx
 import streamlit as st
 
-from app_lib.ksa_data import ControlRoomSource as KsaSource
+import io
+import json
+
+from app_lib.ksa_data import (
+    ControlRoomSource as KsaSource,
+    parse_csv_bytes as parse_ksa_csv,
+)
 from app_lib.ksa_view import (
     render_audit as render_ksa_audit,
     render_detail as render_ksa_detail,
@@ -23,6 +29,8 @@ from app_lib.ksa_view import (
 from app_lib.parsing import load_report
 from app_lib.report_view import render_full_report
 from app_lib.robocorp_client import ControlRoom, RobocorpConfig
+
+import pandas as pd
 
 st.set_page_config(page_title="Trigger Scan", page_icon="play", layout="wide")
 st.title("Trigger a new scan")
@@ -104,6 +112,28 @@ def _poll_until_done(
         time.sleep(every)
 
 
+def _is_ksa_report_bytes(raw: bytes, name_hint: str | None = None) -> bool:
+    looks_json = raw.lstrip().startswith(b"{") or (
+        name_hint and name_hint.lower().endswith(".json")
+    )
+    if looks_json:
+        try:
+            payload = json.loads(raw)
+        except ValueError:
+            return False
+        records = payload.get("records") if isinstance(payload, dict) else None
+        if isinstance(records, list) and records:
+            return "app_id" in records[0]
+        return False
+    try:
+        header = pd.read_csv(
+            io.BytesIO(raw), encoding="utf-8-sig", dtype=str, nrows=0
+        )
+    except Exception:  # noqa: BLE001
+        return False
+    return "app_id" in header.columns
+
+
 def _render_completed_run(run: dict[str, Any], process_id: str) -> None:
     run_id = run["id"]
     st.success(f"Run finished. ID: `{run_id}`  ·  state: `{run.get('state')}`")
@@ -116,23 +146,25 @@ def _render_completed_run(run: dict[str, Any], process_id: str) -> None:
         return
 
     by_name = {a.get("name"): a for a in artifacts}
-    report = by_name.get("classification_report.json") or by_name.get(
-        "classification_report.csv"
-    )
-    is_ksa_run = "applications.csv" in by_name and not report
+    report = by_name.get("report.json") or by_name.get("report.csv")
 
-    if not report and not is_ksa_run:
+    if not report:
         st.warning(
-            "Run completed but no recognized report artifact was produced "
-            "(`classification_report.json/.csv` for the DLP bot, "
-            "`applications.csv` for the KSA bot). Check the bot's log."
+            "Run completed but no `report.csv` (or `report.json`) was produced. "
+            "Check the bot's log."
         )
         return
 
-    if is_ksa_run:
+    try:
+        raw_report = client.download_artifact(report["step_run_id"], report["id"])
+    except httpx.HTTPError as exc:
+        st.error(f"Failed to download report: {exc}")
+        return
+
+    if _is_ksa_report_bytes(raw_report, report.get("name")):
         ksa_source = KsaSource(robocorp=cfg, process_id=process_id)
         try:
-            ksa_df = ksa_source.load_applications(run_id)
+            ksa_df = parse_ksa_csv(raw_report)
             ksa_audit = ksa_source.load_audit(run_id)
         except (httpx.HTTPError, ValueError) as exc:
             st.error(f"Failed to load KSA artifacts: {exc}")
@@ -150,10 +182,9 @@ def _render_completed_run(run: dict[str, Any], process_id: str) -> None:
         return
 
     try:
-        raw_report = client.download_artifact(report["step_run_id"], report["id"])
         df = load_report(raw_report, name_hint=report.get("name"))
-    except (httpx.HTTPError, ValueError) as exc:
-        st.error(f"Failed to load report: {exc}")
+    except ValueError as exc:
+        st.error(f"Failed to parse report: {exc}")
         return
 
     render_full_report(df)

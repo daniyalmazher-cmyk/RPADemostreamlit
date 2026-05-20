@@ -9,7 +9,12 @@ import httpx
 import pandas as pd
 import streamlit as st
 
-from app_lib.ksa_data import ControlRoomSource as KsaSource
+import io
+
+from app_lib.ksa_data import (
+    ControlRoomSource as KsaSource,
+    parse_csv_bytes as parse_ksa_csv,
+)
 from app_lib.ksa_view import (
     render_audit as render_ksa_audit,
     render_detail as render_ksa_detail,
@@ -64,6 +69,34 @@ def _download(step_run_id: str, artifact_id: str) -> bytes:
 # `st.dataframe` cells, unlike Streamlit's `:color[label]` syntax which
 # only works inside markdown. Covers every process-run state the Control
 # Room API can return; unknown states fall back to ⚪.
+def _is_ksa_report_bytes(raw: bytes, name_hint: str | None = None) -> bool:
+    """Decide whether a downloaded report.csv/.json belongs to the KSA bot.
+
+    KSA reports carry an `app_id` column / field; DLP reports don't. We
+    sniff cheaply by reading just the CSV header or the top of the JSON.
+    """
+    looks_json = raw.lstrip().startswith(b"{") or (
+        name_hint and name_hint.lower().endswith(".json")
+    )
+    if looks_json:
+        try:
+            import json
+            payload = json.loads(raw)
+        except ValueError:
+            return False
+        records = payload.get("records") if isinstance(payload, dict) else None
+        if isinstance(records, list) and records:
+            return "app_id" in records[0]
+        return False
+    try:
+        header = pd.read_csv(
+            io.BytesIO(raw), encoding="utf-8-sig", dtype=str, nrows=0
+        )
+    except Exception:  # noqa: BLE001 — CSV parse can fail in many shapes
+        return False
+    return "app_id" in header.columns
+
+
 STATE_BADGES = {
     "new":          "🔵 New",
     "in_progress":  "🟡 Running",
@@ -205,17 +238,14 @@ with st.spinner("Loading artifacts…"):
         st.stop()
 
 by_name = {a.get("name"): a for a in artifacts}
-report_artifact = by_name.get("classification_report.json") or by_name.get(
-    "classification_report.csv"
-)
-is_ksa_run = "applications.csv" in by_name and not report_artifact
+# Both bots now emit `report.csv`; DLP may additionally emit `report.json`
+# with richer per-file detection values, which we prefer when available.
+report_artifact = by_name.get("report.json") or by_name.get("report.csv")
 
-if not report_artifact and not is_ksa_run:
+if not report_artifact:
     st.warning(
-        "This run has no recognized report artifact "
-        "(`classification_report.json/.csv` for the DLP bot, "
-        "`applications.csv` for the KSA bot). "
-        "Either the run failed before writing reports, or it's still in progress."
+        "This run has no `report.csv` (or `report.json`). "
+        "Either the run failed before writing a report, or it's still in progress."
     )
     with st.expander("Available artifacts"):
         if artifacts:
@@ -230,15 +260,24 @@ if not report_artifact and not is_ksa_run:
             st.caption("No artifacts attached.")
     st.stop()
 
+with st.spinner("Downloading report…"):
+    try:
+        raw_report = _download(report_artifact["step_run_id"], report_artifact["id"])
+    except httpx.HTTPError as exc:
+        st.error(f"Failed to download report: {exc}")
+        st.stop()
+
+# Sniff: KSA reports have an `app_id` column; DLP reports don't.
+is_ksa_run = _is_ksa_report_bytes(raw_report, report_artifact.get("name"))
+
 if is_ksa_run:
-    with st.spinner("Downloading KSA artifacts…"):
-        ksa_source = KsaSource(robocorp=cfg, process_id=process_id)
-        try:
-            ksa_df = ksa_source.load_applications(selected_run_id)
-            ksa_audit = ksa_source.load_audit(selected_run_id)
-        except (httpx.HTTPError, ValueError) as exc:
-            st.error(f"Failed to load KSA artifacts: {exc}")
-            st.stop()
+    ksa_source = KsaSource(robocorp=cfg, process_id=process_id)
+    try:
+        ksa_df = parse_ksa_csv(raw_report)
+        ksa_audit = ksa_source.load_audit(selected_run_id)
+    except (httpx.HTTPError, ValueError) as exc:
+        st.error(f"Failed to load KSA artifacts: {exc}")
+        st.stop()
 
     st.success(f"Loaded KSA run with {len(ksa_df)} applications.")
     queue_tab, detail_tab, audit_tab = st.tabs(
@@ -251,13 +290,11 @@ if is_ksa_run:
     with audit_tab:
         render_ksa_audit(ksa_audit)
 else:
-    with st.spinner("Downloading report…"):
-        try:
-            raw_report = _download(report_artifact["step_run_id"], report_artifact["id"])
-            df = load_report(raw_report, name_hint=report_artifact.get("name"))
-        except (httpx.HTTPError, ValueError) as exc:
-            st.error(f"Failed to load report: {exc}")
-            st.stop()
+    try:
+        df = load_report(raw_report, name_hint=report_artifact.get("name"))
+    except ValueError as exc:
+        st.error(f"Failed to parse report: {exc}")
+        st.stop()
 
     st.success(f"Loaded report from `{report_artifact['name']}` ({len(df)} files).")
     render_full_report(df)
