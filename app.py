@@ -134,7 +134,7 @@ st.markdown(
 central bank (now formally called the Saudi Central Bank, but everyone
 still says SAMA). The **CSF** is its mandatory cyber security framework
 for every SAMA-regulated entity: banks, insurers, finance companies,
-fintechs operating in KSA. Covers cyber governance, identity, asset
+fintechs operating in the kingdom. Covers cyber governance, identity, asset
 management, third-party risk, incident response. Audited annually.
 Non-compliance carries fines, license restrictions, and in serious
 cases license revocation.
@@ -148,7 +148,7 @@ resilience, third-party, industrial control). Mandatory for anyone
 designated critical infrastructure, which banks are.
 
 ##### PDPL — Personal Data Protection Law
-KSA's data protection law, enforced by the Saudi Data & AI Authority
+The kingdom's data protection law, enforced by the Saudi Data & AI Authority
 (**SDAIA**). Roughly equivalent in spirit to Europe's GDPR. Defines what
 counts as personal data, requires lawful basis for processing, mandates
 breach notification, restricts cross-border data transfer. Fully in

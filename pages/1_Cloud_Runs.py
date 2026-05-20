@@ -11,15 +11,8 @@ import streamlit as st
 
 import io
 
-from app_lib.ksa_data import (
-    ControlRoomSource as KsaSource,
-    parse_csv_bytes as parse_ksa_csv,
-)
-from app_lib.ksa_view import (
-    render_audit as render_ksa_audit,
-    render_detail as render_ksa_detail,
-    render_queue as render_ksa_queue,
-)
+from app_lib.ksa_data import parse_csv_bytes as parse_ksa_csv
+from app_lib.ksa_view import render_queue as render_ksa_queue
 from app_lib.parsing import load_report
 from app_lib.report_view import render_full_report
 from app_lib.robocorp_client import ControlRoom, RobocorpConfig
@@ -271,24 +264,14 @@ with st.spinner("Downloading report…"):
 is_ksa_run = _is_ksa_report_bytes(raw_report, report_artifact.get("name"))
 
 if is_ksa_run:
-    ksa_source = KsaSource(robocorp=cfg, process_id=process_id)
     try:
         ksa_df = parse_ksa_csv(raw_report)
-        ksa_audit = ksa_source.load_audit(selected_run_id)
-    except (httpx.HTTPError, ValueError) as exc:
-        st.error(f"Failed to load KSA artifacts: {exc}")
+    except ValueError as exc:
+        st.error(f"Failed to parse report: {exc}")
         st.stop()
 
-    st.success(f"Loaded KSA run with {len(ksa_df)} applications.")
-    queue_tab, detail_tab, audit_tab = st.tabs(
-        ["Application Queue", "Application Detail", "Audit Log"]
-    )
-    with queue_tab:
-        render_ksa_queue(ksa_df)
-    with detail_tab:
-        render_ksa_detail(ksa_source, ksa_df, run_id=selected_run_id)
-    with audit_tab:
-        render_ksa_audit(ksa_audit)
+    st.success(f"Loaded run with {len(ksa_df)} applications.")
+    render_ksa_queue(ksa_df)
 else:
     try:
         df = load_report(raw_report, name_hint=report_artifact.get("name"))
