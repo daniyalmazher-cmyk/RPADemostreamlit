@@ -1,4 +1,4 @@
-"""Streamlit renderer for the second bot's queue report.
+"""Streamlit renderer for the onboarding bot's queue report.
 
 Arabic name values are wrapped in `direction:rtl; unicode-bidi:embed;` so
 browsers apply contextual joining (otherwise Arabic renders as
@@ -42,10 +42,14 @@ def status_badge(status: str | None) -> str:
     key = str(status) if status else ""
     color = STATUS_COLORS.get(key, "#6b7280")
     label = STATUS_LABELS.get(key, key or "—")
+    # `white-space:nowrap` is what stops the pill turning into a tall oval
+    # when the column is narrow — without it the label wraps and the
+    # 999px border-radius bulges each line into an egg shape.
     return (
-        f"<span style='background:{color}; color:#fff; padding:2px 10px; "
-        "border-radius:999px; font-size:0.85rem; font-weight:600; "
-        f"display:inline-block;'>{label}</span>"
+        f"<span style='background:{color}; color:#fff; padding:4px 12px; "
+        "border-radius:999px; font-size:0.8rem; font-weight:600; "
+        "display:inline-block; white-space:nowrap;'>"
+        f"{label}</span>"
     )
 
 
@@ -73,51 +77,67 @@ def render_queue(df: pd.DataFrame) -> None:
         )
 
     st.markdown("")
-    present_statuses = [s for s in STATUS_ORDER if counts.get(s, 0) > 0]
-    selected = st.multiselect(
-        "Status",
-        options=STATUS_ORDER,
-        default=present_statuses or STATUS_ORDER,
-        format_func=lambda s: STATUS_LABELS.get(s, s),
-        key="ksa_queue_status_filter",
-    )
-
-    filtered = df[df["status"].astype(str).isin(selected)].copy()
-    if filtered.empty:
-        st.caption("No applications match the selected status filter.")
-        return
-
-    st.markdown(_queue_table_html(filtered), unsafe_allow_html=True)
-    st.caption(f"Showing {len(filtered)} of {len(df)} applications.")
+    _render_queue_rows(df)
+    st.caption(f"{len(df)} applications.")
 
 
-def _queue_table_html(df: pd.DataFrame) -> str:
-    headers = [
-        "Processed", "Source", "ID number",
-        "Name (EN)", "Name (AR)", "Status", "Failed rules",
-    ]
-    rows_html = []
-    for _, row in df.iterrows():
-        cells = [
-            _escape(row.get("processed_at", "")),
-            _escape(row.get("source_email", "")),
-            _escape(row.get("id_number", "")),
-            _escape(row.get("name_en", "")),
-            render_arabic(row.get("name_ar", "")),
-            status_badge(str(row.get("status", ""))),
-            _escape(row.get("failed_rules", "")) or "<span style='color:#9ca3af'>—</span>",
-        ]
-        rows_html.append(
-            "<tr>" + "".join(
-                f"<td style='padding:6px 10px; border-bottom:1px solid #e5e7eb; vertical-align:top;'>{c}</td>"
-                for c in cells
-            ) + "</tr>"
+# Column widths shared by the header and every row so they stay aligned.
+# Order: Processed, Source, ID number, Name (EN), Name (AR), Status,
+# Failed rules, Send Email button, Add to CRM button.
+_QUEUE_COL_WIDTHS = [1.4, 1.5, 1.1, 1.3, 1.3, 1.0, 1.2, 1.1, 1.1]
+_QUEUE_HEADERS = [
+    "Processed", "Source", "ID number",
+    "Name (EN)", "Name (AR)", "Status", "Failed rules",
+    "", "",
+]
+
+
+def _render_queue_rows(df: pd.DataFrame) -> None:
+    # Header row
+    header_cols = st.columns(_QUEUE_COL_WIDTHS)
+    for col, label in zip(header_cols, _QUEUE_HEADERS):
+        col.markdown(
+            f"<div style='font-size:0.8rem; font-weight:600; color:#374151; "
+            f"padding-bottom:6px; border-bottom:2px solid #d1d5db;'>{label}&nbsp;</div>",
+            unsafe_allow_html=True,
         )
-    head = "".join(
-        f"<th style='text-align:left; padding:8px 10px; border-bottom:2px solid #d1d5db; "
-        f"font-size:0.85rem; color:#374151;'>{h}</th>" for h in headers
+
+    # Data rows
+    for i, (_, row) in enumerate(df.iterrows()):
+        _render_queue_row(i, row)
+
+
+def _render_queue_row(i: int, row: pd.Series) -> None:
+    cols = st.columns(_QUEUE_COL_WIDTHS)
+
+    cell_style = (
+        "padding:8px 4px; border-bottom:1px solid #e5e7eb; "
+        "font-size:0.85rem; line-height:1.3;"
     )
-    return (
-        "<table style='width:100%; border-collapse:collapse; font-size:0.9rem;'>"
-        f"<thead><tr>{head}</tr></thead><tbody>{''.join(rows_html)}</tbody></table>"
-    )
+
+    def cell(text_html: str) -> str:
+        return f"<div style='{cell_style}'>{text_html}</div>"
+
+    failed = str(row.get("failed_rules", "") or "")
+    failed_html = _escape(failed) if failed else "<span style='color:#9ca3af'>—</span>"
+
+    cols[0].markdown(cell(_escape(row.get("processed_at", ""))), unsafe_allow_html=True)
+    cols[1].markdown(cell(_escape(row.get("source_email", ""))), unsafe_allow_html=True)
+    cols[2].markdown(cell(_escape(row.get("id_number", ""))), unsafe_allow_html=True)
+    cols[3].markdown(cell(_escape(row.get("name_en", ""))), unsafe_allow_html=True)
+    cols[4].markdown(cell(render_arabic(row.get("name_ar", ""))), unsafe_allow_html=True)
+    cols[5].markdown(cell(status_badge(str(row.get("status", "")))), unsafe_allow_html=True)
+    cols[6].markdown(cell(failed_html), unsafe_allow_html=True)
+
+    # Action buttons — demo wiring uses st.toast. Real deployment would
+    # call an Exchange/Graph API for email and a CBS/CRM API for the
+    # second one.
+    name = row.get("name_en") or row.get("name_ar") or row.get("id_number", "this applicant")
+    email = row.get("source_email", "")
+
+    with cols[7]:
+        if st.button("Send Email", key=f"verify_{i}", width="stretch"):
+            st.toast(f"Verification email sent to {email or name}")
+    with cols[8]:
+        if st.button("Add to CRM", key=f"crm_{i}", width="stretch"):
+            st.toast(f"{name} appended to CRM")
