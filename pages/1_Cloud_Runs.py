@@ -9,6 +9,13 @@ import httpx
 import pandas as pd
 import streamlit as st
 
+from app_lib.ksa_data import ControlRoomSource as KsaSource
+from app_lib.ksa_view import (
+    render_architecture as render_ksa_architecture,
+    render_audit as render_ksa_audit,
+    render_detail as render_ksa_detail,
+    render_queue as render_ksa_queue,
+)
 from app_lib.parsing import load_audit_log, load_report
 from app_lib.report_view import render_full_report
 from app_lib.robocorp_client import ControlRoom, RobocorpConfig
@@ -198,10 +205,13 @@ report_artifact = by_name.get("classification_report.json") or by_name.get(
     "classification_report.csv"
 )
 audit_artifact = by_name.get("audit_log.json")
+is_ksa_run = "applications.csv" in by_name and not report_artifact
 
-if not report_artifact:
+if not report_artifact and not is_ksa_run:
     st.warning(
-        "This run has no `classification_report.json` (or `.csv`). "
+        "This run has no recognized report artifact "
+        "(`classification_report.json/.csv` for the DLP bot, "
+        "`applications.csv` for the KSA bot). "
         "Either the run failed before writing reports, or it's still in progress."
     )
     with st.expander("Available artifacts"):
@@ -217,24 +227,47 @@ if not report_artifact:
             st.caption("No artifacts attached.")
     st.stop()
 
-with st.spinner("Downloading report…"):
-    try:
-        raw_report = _download(report_artifact["step_run_id"], report_artifact["id"])
-        df = load_report(raw_report, name_hint=report_artifact.get("name"))
-    except (httpx.HTTPError, ValueError) as exc:
-        st.error(f"Failed to load report: {exc}")
-        st.stop()
+if is_ksa_run:
+    with st.spinner("Downloading KSA artifacts…"):
+        ksa_source = KsaSource(robocorp=cfg, process_id=process_id)
+        try:
+            ksa_df = ksa_source.load_applications(selected_run_id)
+            ksa_audit = ksa_source.load_audit(selected_run_id)
+        except (httpx.HTTPError, ValueError) as exc:
+            st.error(f"Failed to load KSA artifacts: {exc}")
+            st.stop()
 
-audit: dict[str, Any] | None = None
-if audit_artifact:
-    try:
-        raw_audit = _download(audit_artifact["step_run_id"], audit_artifact["id"])
-        audit = load_audit_log(raw_audit)
-    except (httpx.HTTPError, ValueError) as exc:
-        st.warning(f"Could not load audit log: {exc}")
+    st.success(f"Loaded KSA run with {len(ksa_df)} applications.")
+    queue_tab, detail_tab, audit_tab, arch_tab = st.tabs(
+        ["Application Queue", "Application Detail", "Audit Log", "Architecture"]
+    )
+    with queue_tab:
+        render_ksa_queue(ksa_df)
+    with detail_tab:
+        render_ksa_detail(ksa_source, ksa_df, run_id=selected_run_id)
+    with audit_tab:
+        render_ksa_audit(ksa_audit)
+    with arch_tab:
+        render_ksa_architecture()
+else:
+    with st.spinner("Downloading report…"):
+        try:
+            raw_report = _download(report_artifact["step_run_id"], report_artifact["id"])
+            df = load_report(raw_report, name_hint=report_artifact.get("name"))
+        except (httpx.HTTPError, ValueError) as exc:
+            st.error(f"Failed to load report: {exc}")
+            st.stop()
 
-st.success(f"Loaded report from `{report_artifact['name']}` ({len(df)} files).")
-render_full_report(df, audit=audit)
+    audit: dict[str, Any] | None = None
+    if audit_artifact:
+        try:
+            raw_audit = _download(audit_artifact["step_run_id"], audit_artifact["id"])
+            audit = load_audit_log(raw_audit)
+        except (httpx.HTTPError, ValueError) as exc:
+            st.warning(f"Could not load audit log: {exc}")
+
+    st.success(f"Loaded report from `{report_artifact['name']}` ({len(df)} files).")
+    render_full_report(df, audit=audit)
 
 with st.expander("Raw artifacts"):
     st.dataframe(
