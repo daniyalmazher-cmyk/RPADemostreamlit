@@ -1,9 +1,12 @@
 """Landing page — RPA dashboard briefing for bank IT-manager stakeholders.
 
-Three sections: stack + security posture mapped to KSA/Gulf governance,
-how Robocorp orchestrates work (entities + run lifecycle), and what each
-of the two bots does today.
+Four sections: stack + security posture mapped to KSA/Gulf governance,
+how Robocorp orchestrates work (entities + run lifecycle), what each of
+the two bots does today, and the KYC rule pack from `kyc_rules.md`.
 """
+
+import re
+from pathlib import Path
 
 import streamlit as st
 
@@ -363,3 +366,21 @@ with c1:
     st.page_link("pages/1_Cloud_Runs.py", label="Browse Cloud Runs")
 with c2:
     st.page_link("pages/2_Trigger.py", label="Trigger a new run")
+
+st.divider()
+
+# =====================================================================
+# Section 4 — KYC rules (rendered from kyc_rules.md so the file stays
+# the single source of truth)
+# =====================================================================
+_kyc_doc = Path(__file__).parent / "kyc_rules.md"
+if _kyc_doc.exists():
+    _content = _kyc_doc.read_text(encoding="utf-8")
+    # Demote every heading by one level so the file's top H1 becomes an
+    # H2 that lines up with the other section headers on this page.
+    _content = re.sub(r"^(#{1,5}) ", r"#\1 ", _content, flags=re.MULTILINE)
+    # Add the section number to the (now H2) title.
+    _content = _content.replace("## KYC Rules", "## 4. KYC rules", 1)
+    st.markdown(_content)
+else:
+    st.caption("`kyc_rules.md` not found at the project root.")
