@@ -23,15 +23,11 @@ def render_summary_metrics(df: pd.DataFrame) -> None:
     c5.metric("Peak risk", s["peak_risk"])
 
 
-def render_charts(df: pd.DataFrame) -> None:
+def render_classification_donut(df: pd.DataFrame) -> None:
     if df.empty:
-        st.info("No files in this report.")
         return
-
     st.subheader("Classification mix")
-    left, _ = st.columns([1, 1])
-    with left:
-        st.plotly_chart(charts.classification_donut(df), width="stretch")
+    st.plotly_chart(charts.classification_donut(df), width="stretch")
 
 
 def render_file_table(df: pd.DataFrame) -> None:
@@ -39,43 +35,6 @@ def render_file_table(df: pd.DataFrame) -> None:
         return
 
     st.subheader("Files")
-    classifications = [c for c in df["classification"].dropna().astype(str).unique()]
-    file_types = sorted(df["file_type"].dropna().astype(str).unique().tolist())
-
-    # Stable keys — do NOT use id(df). The DataFrame is rebuilt on every
-    # script rerun (load_report() is not cached), so id(df) shifts each
-    # rerun, Streamlit sees the widget as fresh, and the user's selection
-    # is wiped on every interaction.
-    filt_col1, filt_col2, filt_col3 = st.columns([2, 2, 3])
-    with filt_col1:
-        selected_classifications = st.multiselect(
-            "Classification",
-            options=classifications,
-            default=classifications,
-            key="dlp_filter_classification",
-        )
-    with filt_col2:
-        selected_types = st.multiselect(
-            "File type",
-            options=file_types,
-            default=file_types,
-            key="dlp_filter_filetype",
-        )
-    with filt_col3:
-        risk_min, risk_max = st.slider(
-            "Risk score range",
-            min_value=0,
-            max_value=100,
-            value=(0, 100),
-            key="dlp_filter_risk",
-        )
-
-    filtered = df[
-        df["classification"].astype(str).isin(selected_classifications)
-        & df["file_type"].astype(str).isin(selected_types)
-        & df["risk_score"].between(risk_min, risk_max)
-    ]
-
     table_cols = [
         "file_name",
         "classification",
@@ -85,19 +44,22 @@ def render_file_table(df: pd.DataFrame) -> None:
         "salary_indicator",
         "file_path",
     ]
-    table_cols = [c for c in table_cols if c in filtered.columns]
-    st.dataframe(filtered[table_cols], width="stretch", hide_index=True)
-    st.caption(f"Showing {len(filtered)} of {len(df)} files.")
+    table_cols = [c for c in table_cols if c in df.columns]
+    st.dataframe(df[table_cols], width="stretch", hide_index=True)
+    st.caption(f"{len(df)} files.")
 
-    if not filtered.empty:
-        st.subheader("Detection details")
-        # Sort by risk so the most-flagged file is the default selection.
-        sorted_filtered = filtered.sort_values("risk_score", ascending=False)
-        options = sorted_filtered["file_name"].tolist()
-        choice = st.selectbox("Pick a file", options=options, key="dlp_detail_file")
-        if choice:
-            row = filtered[filtered["file_name"] == choice].iloc[0]
-            _render_detection_detail(row)
+
+def render_detection_details(df: pd.DataFrame) -> None:
+    if df.empty:
+        return
+    st.subheader("Detection details")
+    # Sort by risk so the most-flagged file is the default selection.
+    sorted_df = df.sort_values("risk_score", ascending=False)
+    options = sorted_df["file_name"].tolist()
+    choice = st.selectbox("Pick a file", options=options, key="dlp_detail_file")
+    if choice:
+        row = df[df["file_name"] == choice].iloc[0]
+        _render_detection_detail(row)
 
 
 def _render_detection_detail(row: pd.Series) -> None:
@@ -133,6 +95,12 @@ def _render_detection_detail(row: pd.Series) -> None:
 def render_full_report(df: pd.DataFrame) -> None:
     render_summary_metrics(df)
     st.divider()
-    render_charts(df)
-    st.divider()
     render_file_table(df)
+    if df.empty:
+        return
+    st.divider()
+    left, right = st.columns(2)
+    with left:
+        render_classification_donut(df)
+    with right:
+        render_detection_details(df)
