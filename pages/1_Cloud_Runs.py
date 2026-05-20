@@ -62,12 +62,15 @@ def _download(step_run_id: str, artifact_id: str) -> bytes:
 # `st.dataframe` cells, unlike Streamlit's `:color[label]` syntax which
 # only works inside markdown. Covers every process-run state the Control
 # Room API can return; unknown states fall back to ⚪.
-def _is_ksa_report_bytes(raw: bytes, name_hint: str | None = None) -> bool:
-    """Decide whether a downloaded report.csv/.json belongs to the KSA bot.
+# Any of these columns indicates an onboarding-bot report (vs. the DLP
+# report which uses `file_name` / `classification`). `app_id` was dropped
+# from the schema in a recent bot release; `id_number` / `status` /
+# `failed_rules` are still load-bearing.
+_KSA_MARKER_COLUMNS = {"id_number", "name_ar", "failed_rules", "app_id"}
 
-    KSA reports carry an `app_id` column / field; DLP reports don't. We
-    sniff cheaply by reading just the CSV header or the top of the JSON.
-    """
+
+def _is_ksa_report_bytes(raw: bytes, name_hint: str | None = None) -> bool:
+    """Decide whether a downloaded report.csv/.json is from the onboarding bot."""
     looks_json = raw.lstrip().startswith(b"{") or (
         name_hint and name_hint.lower().endswith(".json")
     )
@@ -79,7 +82,7 @@ def _is_ksa_report_bytes(raw: bytes, name_hint: str | None = None) -> bool:
             return False
         records = payload.get("records") if isinstance(payload, dict) else None
         if isinstance(records, list) and records:
-            return "app_id" in records[0]
+            return bool(_KSA_MARKER_COLUMNS & set(records[0].keys()))
         return False
     try:
         header = pd.read_csv(
@@ -87,7 +90,7 @@ def _is_ksa_report_bytes(raw: bytes, name_hint: str | None = None) -> bool:
         )
     except Exception:  # noqa: BLE001 — CSV parse can fail in many shapes
         return False
-    return "app_id" in header.columns
+    return bool(_KSA_MARKER_COLUMNS & set(header.columns))
 
 
 STATE_BADGES = {

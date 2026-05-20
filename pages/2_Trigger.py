@@ -105,6 +105,9 @@ def _poll_until_done(
         time.sleep(every)
 
 
+_KSA_MARKER_COLUMNS = {"id_number", "name_ar", "failed_rules", "app_id"}
+
+
 def _is_ksa_report_bytes(raw: bytes, name_hint: str | None = None) -> bool:
     looks_json = raw.lstrip().startswith(b"{") or (
         name_hint and name_hint.lower().endswith(".json")
@@ -116,7 +119,7 @@ def _is_ksa_report_bytes(raw: bytes, name_hint: str | None = None) -> bool:
             return False
         records = payload.get("records") if isinstance(payload, dict) else None
         if isinstance(records, list) and records:
-            return "app_id" in records[0]
+            return bool(_KSA_MARKER_COLUMNS & set(records[0].keys()))
         return False
     try:
         header = pd.read_csv(
@@ -124,7 +127,7 @@ def _is_ksa_report_bytes(raw: bytes, name_hint: str | None = None) -> bool:
         )
     except Exception:  # noqa: BLE001
         return False
-    return "app_id" in header.columns
+    return bool(_KSA_MARKER_COLUMNS & set(header.columns))
 
 
 def _render_completed_run(run: dict[str, Any], process_id: str) -> None:

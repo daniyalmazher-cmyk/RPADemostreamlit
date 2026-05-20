@@ -93,15 +93,12 @@ def render_queue(df: pd.DataFrame) -> None:
 
 def _queue_table_html(df: pd.DataFrame) -> str:
     headers = [
-        "App", "Processed", "Source", "ID number",
+        "Processed", "Source", "ID number",
         "Name (EN)", "Name (AR)", "Status", "Failed rules",
     ]
     rows_html = []
     for _, row in df.iterrows():
-        app_id = str(row.get("app_id", ""))
-        short = app_id[:8] if app_id else "—"
         cells = [
-            f"<code>{_escape(short)}</code>",
             _escape(row.get("processed_at", "")),
             _escape(row.get("source_email", "")),
             _escape(row.get("id_number", "")),
