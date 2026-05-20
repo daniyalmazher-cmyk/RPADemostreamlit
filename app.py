@@ -28,40 +28,211 @@ st.markdown(
     """
 The stack is open-source where it matters and pluggable everywhere your
 security team gets to choose the provider. Nothing here is opinionated
-about cloud vendor — both bots run on-prem inside your VPC if that's the
-deployment model you need.
+about cloud vendor — both bots can run on-prem inside your VPC if that's
+the deployment model you need.
 """
 )
 
-st.markdown("#### Stack")
+# ----- 1A: Stack -----
+st.markdown("### The stack — what each layer is and why we picked it")
+
 st.markdown(
     """
-| Layer | Technology | Notes |
-|---|---|---|
-| Language | Python 3.12 | Pinned in `conda.yaml`, reproducible per-run |
-| RPA platform | Robocorp / Sema4.ai | Open-source robot framework + Control Room orchestrator |
-| Environment | `rcc` + `conda.yaml` | Hermetic env materialized per run, no system Python |
-| OCR | Tesseract 5.x (offline) / Claude vision (optional) | Engine selected via `OCR_ENGINE` env var |
-| Email intake | IMAP (Gmail App Password today; Microsoft Graph in production) | Scoped App Passwords, never shared-mailbox credentials |
-| Storage | Local filesystem in the demo; pluggable to S3 / Azure Blob / on-prem object store | Defined per-task in `robot.yaml` |
-| Secrets | Robocorp Vault | Encrypted at rest, rotatable, RBAC-controlled |
-| Dashboard (this UI) | Streamlit + httpx | Read-only view over the Control Room REST API |
+##### Python 3.12 (the language)
+Python is the world's most-used programming language for automation, data
+processing, and AI. Easy to read, huge library ecosystem, widely known
+inside bank IT departments. We pin to version 3.12 in a config file so
+every run uses the exact same Python — no "works on my laptop but not on
+the server" surprises.
+
+##### Robocorp / Sema4.ai (the RPA platform)
+**RPA** stands for *Robotic Process Automation* — software bots that do
+the repetitive computer work humans used to do (read emails, fill forms,
+extract data, copy between systems). **Robocorp** is an open-source RPA
+framework — recently rebranded **Sema4.ai**. Two pieces:
+
+- A Python library for writing bots.
+- A web console called **Control Room** that schedules and runs them.
+
+"Open-source" matters for a bank: you can read the source, host it
+yourself, audit what it does, and there's no vendor lock-in on the
+runtime — the bots are just plain Python.
+
+##### `rcc` + `conda.yaml` (environment management)
+A "Python environment" is the specific combination of Python version and
+libraries a program needs. `conda.yaml` is a config file that lists
+exactly what's needed (Python 3.12, Tesseract 5.x, pandas, etc.). `rcc`
+is the command-line tool that reads that file and builds a fresh,
+isolated environment for each run. We call this **hermetic** — the bot
+can't accidentally pick up a different library version from whatever
+else is installed on the host. Same code + same `conda.yaml` = the same
+behaviour every time. This matters for audit and change control: there's
+no ambiguity about what version of what library produced a given output.
+
+##### Tesseract 5.x / Claude vision (OCR engines)
+**OCR** = *Optical Character Recognition*: extracting text from images
+or scanned documents. We support two engines, swapped by changing one
+environment variable:
+
+- **Tesseract 5.x** — the long-running open-source OCR engine (started
+  at HP in the 80s, now maintained by Google). Runs entirely offline,
+  free, decent on English, weaker on Arabic and stylised fonts.
+- **Claude vision** — Anthropic's multimodal AI. Runs in the cloud,
+  costs money per page, materially better on Arabic and noisy/skewed
+  documents.
+
+You can start with Tesseract (zero per-document cost) and upgrade to
+Claude only on the documents where accuracy isn't good enough.
+
+##### IMAP / Gmail App Password / Microsoft Graph (email intake)
+**IMAP** = *Internet Message Access Protocol*: the standard way for an
+application to read messages in a mailbox (different from SMTP, which is
+for sending). **Gmail App Password** is a Google feature: instead of
+giving the bot your real Gmail login, you generate a 16-character
+single-purpose password that only works for that one app and can be
+revoked at any time without changing the user's actual password. In a
+bank you'd typically use **Microsoft Graph API** (the modern API in
+front of Exchange Online) for the same purpose — scoped to the specific
+mailbox, audited centrally.
+
+##### Local filesystem / S3 / Azure Blob (output storage)
+Today the bot writes its outputs (CSV reports, per-application JSON,
+audit logs) to the local disk on whichever worker ran it. In production
+you'd send them to **object storage**: **S3** is Amazon's, **Azure
+Blob** is Microsoft's, **MinIO** is a popular on-prem alternative.
+Object storage gives you retention policies (automatic deletion after N
+days), encryption at rest, immutable buckets for legal hold, and easy
+integration into the rest of your data pipeline.
+
+##### Robocorp Vault (secrets management)
+A **vault** is an encrypted store for secrets — passwords, API keys,
+certificates. The bot never sees a raw credentials file. At run time it
+asks the Vault by name ("get me `gmail_app_password`"), the Vault
+decrypts the value, hands it over for the duration of that one run, and
+it's never persisted to disk. **Encrypted at rest** means even if
+someone got hold of the underlying storage, they'd only see ciphertext.
+Rotating a password is one click in the Vault UI — no redeploy.
+
+##### Streamlit + httpx (this dashboard)
+**Streamlit** is a Python library for building data dashboards quickly
+— every chart, table, and button on these pages is a few lines of
+Python. **httpx** is a Python library for making HTTPS calls, which is
+how this dashboard talks to Control Room's REST API to fetch run
+history and download artifact files. This dashboard is **read-only**
+against Control Room except for the single "trigger a run" button on
+the Trigger page.
 """
 )
 
-st.markdown("#### Posture mapped to KSA / Gulf governance")
+# ----- 1B: Governance -----
+st.markdown("### Governance — what the acronyms mean and what they require")
+
+st.markdown(
+    """
+##### SAMA CSF — Saudi Central Bank Cyber Security Framework
+**SAMA** stands for *Saudi Arabian Monetary Authority* — the kingdom's
+central bank (now formally called the Saudi Central Bank, but everyone
+still says SAMA). The **CSF** is its mandatory cyber security framework
+for every SAMA-regulated entity: banks, insurers, finance companies,
+fintechs operating in KSA. Covers cyber governance, identity, asset
+management, third-party risk, incident response. Audited annually.
+Non-compliance carries fines, license restrictions, and in serious
+cases license revocation.
+
+##### NCA ECC — National Cybersecurity Authority Essential Cybersecurity Controls
+The **NCA** is the kingdom-wide cybersecurity regulator (broader scope
+than SAMA — applies to government entities, critical national
+infrastructure, and large private firms). The **ECC** is its baseline
+control set: 114 controls across 5 domains (governance, defence,
+resilience, third-party, industrial control). Mandatory for anyone
+designated critical infrastructure, which banks are.
+
+##### PDPL — Personal Data Protection Law
+KSA's data protection law, enforced by the Saudi Data & AI Authority
+(**SDAIA**). Roughly equivalent in spirit to Europe's GDPR. Defines what
+counts as personal data, requires lawful basis for processing, mandates
+breach notification, restricts cross-border data transfer. Fully in
+force since 2024 with material monetary penalties for violations.
+
+##### Data residency
+The principle that customer data — especially Saudi nationals' personal
+data — must be physically stored and processed *inside the kingdom*, or
+in countries with an adequate-protection agreement. Cross-border
+transfer otherwise requires explicit consent or a regulatory exception.
+**How we address it:** the Robocorp Worker runs inside your VPC, so
+customer PII, ID images, and OCR text never cross the border.
+
+##### SIEM (Splunk / QRadar / Sentinel)
+**SIEM** = *Security Information and Event Management*. A central
+system that collects log data from across your IT estate (servers,
+applications, network gear, bots like this one) and runs correlation
+rules on it to detect suspicious activity. The three most common at
+large banks: **Splunk** (vendor: Splunk Inc.), **QRadar** (IBM),
+**Microsoft Sentinel**. Our audit logs are JSON — they drop into any of
+them without transformation.
+
+##### RBAC — Role-Based Access Control
+Instead of giving each individual user direct permissions on each
+resource, you define **roles** ("operator", "approver", "auditor") and
+assign users to roles. Less to manage, easier to audit, and matches how
+banks already think about segregation of duties. Control Room enforces
+RBAC natively — who can trigger a process, who can view a run, who can
+read or rotate secrets, all configurable.
+
+##### mTLS — Mutual TLS
+**TLS** is what makes a URL begin with `https://` — the network
+connection is encrypted, and the server proves its identity with a
+certificate. **Mutual TLS** means the client *also* proves its identity
+with its own certificate. So when a Robocorp Worker calls Control Room
+(or vice versa), both sides verify each other before any data flows.
+Prevents impersonation attacks.
+
+##### Change control
+A formal process for tracking changes to production systems — who
+changed what, when, with what approval. Required by every banking
+regulator. **How we address it:** every bot version lives in git with a
+signed tag, the environment is pinned in `conda.yaml`, and every run is
+reproducible from that combination. You can always answer "what version
+of what produced this output."
+
+##### CBS — Core Banking System
+The system of record for customer accounts, balances, transactions.
+Major vendors: **Finacle** (Infosys), **Flexcube** (Oracle), **T24**
+(Temenos). When the Account Opening bot decides "approve" in
+production, it would call your CBS API to create the customer record —
+that's the main integration seam left open in this demo.
+
+##### VPC — Virtual Private Cloud
+A logically isolated network inside a cloud provider (AWS, Azure, GCP)
+that only your organisation can reach — equivalent to having your own
+datacenter on someone else's hardware. Running the Robocorp Worker
+inside your VPC means it's network-reachable only from inside the
+bank's perimeter, with no public ingress.
+
+##### PII — Personally Identifiable Information
+Any data that identifies an individual: national ID number, name,
+address, date of birth, account number. PDPL and SAMA both regulate how
+PII is collected, stored, transmitted, and disposed of. The OCR output
+from an ID card is, by definition, PII — which is why it never leaves
+the worker's local filesystem and why the audit log doesn't contain
+full text dumps.
+"""
+)
+
+# ----- 1C: Summary mapping (quick reference) -----
+st.markdown("### Quick mapping — concern ↔ control (summary)")
 st.markdown(
     """
 | Regulatory concern | How the stack addresses it |
 |---|---|
-| **Data residency** (SAMA CSF, PDPL) | Robocorp Worker runs inside the bank's network. Customer PII, ID images, OCR text never leave the bank's perimeter. |
-| **Secrets handling** (SAMA CSF, NCA ECC) | All credentials in Robocorp Vault — never in repo, never in env files. Rotatable from the Vault UI without redeploy. |
-| **Audit trail** (SAMA CSF, NCA ECC) | Per-run append-only `audit_log.json` with UTC timestamps for every stage transition. Immutable after `finish()`. Drops directly into SIEM (Splunk / QRadar / Sentinel). |
-| **Access control** (NCA ECC) | Control Room enforces role-based access — who can trigger runs, who can view artifacts, who can rotate secrets. |
-| **Change control** (SAMA CSF) | Bot versions are git-tagged + pinned in `conda.yaml`. The same version produces deterministic output. |
-| **Transport security** | All Control Room ↔ Worker traffic is mTLS. Worker calls out only to bank-allowlisted endpoints (Exchange, CBS, screening provider). |
-| **Data classification** (PDPL, NCA ECC) | The DLP Discovery bot itself is a compliance control — surfaces sensitive data at rest for risk teams. |
-| **Vendor lock-in** | Robot framework is open-source. Control Room is self-hostable. Bot code is plain Python — portable to any orchestrator if Robocorp is dropped. |
+| **Data residency** (SAMA CSF, PDPL) | Worker runs inside the bank's network. PII never leaves the perimeter. |
+| **Secrets handling** (SAMA CSF, NCA ECC) | All credentials in Robocorp Vault. Rotatable without redeploy. |
+| **Audit trail** (SAMA CSF, NCA ECC) | Per-run append-only `audit_log.json` (immutable after `finish()`). SIEM-ready JSON. |
+| **Access control** (NCA ECC) | Control Room RBAC: who can trigger, view, rotate. |
+| **Change control** (SAMA CSF) | Git-tagged versions + pinned `conda.yaml`. Reproducible runs. |
+| **Transport security** | mTLS between Control Room and Worker. Allowlisted egress to Exchange / CBS / screening. |
+| **Data classification** (PDPL, NCA ECC) | The DLP bot itself is a compliance control — finds sensitive data at rest. |
+| **Vendor lock-in** | Open-source framework. Self-hostable Control Room. Plain-Python bot code. |
 """
 )
 
