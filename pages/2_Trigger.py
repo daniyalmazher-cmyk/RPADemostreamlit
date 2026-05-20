@@ -1,8 +1,12 @@
-"""Trigger page — start a new bot run in Control Room and view the result."""
+"""Trigger page — start a new bot run in Control Room and view the result.
+
+Bot-agnostic: detects whether the completed run is a DLP-shaped run
+(`classification_report.*`) or a KSA-shaped run (`applications.csv`) and
+dispatches to the matching renderer.
+"""
 
 from __future__ import annotations
 
-import json
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -10,6 +14,12 @@ from typing import Any
 import httpx
 import streamlit as st
 
+from app_lib.ksa_data import ControlRoomSource as KsaSource
+from app_lib.ksa_view import (
+    render_audit as render_ksa_audit,
+    render_detail as render_ksa_detail,
+    render_queue as render_ksa_queue,
+)
 from app_lib.parsing import load_audit_log, load_report
 from app_lib.report_view import render_full_report
 from app_lib.robocorp_client import ControlRoom, RobocorpConfig
@@ -70,35 +80,6 @@ with col2:
         step=1,
     )
 
-st.markdown("#### Optional work item payload")
-st.caption(
-    "JSON object passed to the bot as a work item. Leave empty to trigger with no payload."
-)
-payload_text = st.text_area(
-    "Payload (JSON)",
-    value=st.session_state.get(
-        "trigger_payload",
-        json.dumps(
-            {"batch_id": "manual-streamlit", "requested_by": "dashboard"}, indent=2
-        ),
-    ),
-    height=140,
-    key="trigger_payload",
-)
-
-
-def _parse_payload(raw: str) -> dict[str, Any] | None:
-    raw = raw.strip()
-    if not raw:
-        return None
-    try:
-        value = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Invalid JSON: {exc}") from exc
-    if not isinstance(value, dict):
-        raise ValueError("Payload must be a JSON object.")
-    return value
-
 
 TERMINAL_STATES = {"completed", "unresolved"}
 POLL_CAP_SECONDS = 600
@@ -123,7 +104,7 @@ def _poll_until_done(
         time.sleep(every)
 
 
-def _render_completed_run(run: dict[str, Any]) -> None:
+def _render_completed_run(run: dict[str, Any], process_id: str) -> None:
     run_id = run["id"]
     st.success(f"Run finished. ID: `{run_id}`  ·  state: `{run.get('state')}`")
 
@@ -139,12 +120,34 @@ def _render_completed_run(run: dict[str, Any]) -> None:
         "classification_report.csv"
     )
     audit_art = by_name.get("audit_log.json")
+    is_ksa_run = "applications.csv" in by_name and not report
 
-    if not report:
+    if not report and not is_ksa_run:
         st.warning(
-            "Run completed but no classification report artifact was produced. "
-            "Check the bot's log."
+            "Run completed but no recognized report artifact was produced "
+            "(`classification_report.json/.csv` for the DLP bot, "
+            "`applications.csv` for the KSA bot). Check the bot's log."
         )
+        return
+
+    if is_ksa_run:
+        ksa_source = KsaSource(robocorp=cfg, process_id=process_id)
+        try:
+            ksa_df = ksa_source.load_applications(run_id)
+            ksa_audit = ksa_source.load_audit(run_id)
+        except (httpx.HTTPError, ValueError) as exc:
+            st.error(f"Failed to load KSA artifacts: {exc}")
+            return
+
+        queue_tab, detail_tab, audit_tab = st.tabs(
+            ["Application Queue", "Application Detail", "Audit Log"]
+        )
+        with queue_tab:
+            render_ksa_queue(ksa_df)
+        with detail_tab:
+            render_ksa_detail(ksa_source, ksa_df, run_id=run_id)
+        with audit_tab:
+            render_ksa_audit(ksa_audit)
         return
 
     try:
@@ -178,13 +181,7 @@ go = st.button("Run new scan", type="primary", width="content")
 
 if go:
     try:
-        payload = _parse_payload(payload_text)
-    except ValueError as exc:
-        st.error(str(exc))
-        st.stop()
-
-    try:
-        result = _client().start_process_run(process_id, work_item_payload=payload)
+        result = _client().start_process_run(process_id)
     except httpx.HTTPError as exc:
         st.error(f"Failed to start run: {exc}")
         st.stop()
@@ -195,7 +192,7 @@ if go:
         st.stop()
 
     st.session_state["trigger_history"].insert(
-        0, {"run_id": new_run_id, "started": _ts(), "payload": payload}
+        0, {"run_id": new_run_id, "started": _ts(), "process_id": process_id}
     )
 
     with st.status(f"Started run `{new_run_id}` — polling…", expanded=True) as status:
@@ -205,13 +202,10 @@ if go:
         elif run.get("state") == "unresolved":
             status.update(label=f"Run `{new_run_id}` failed (unresolved).", state="error")
 
-    _render_completed_run(run)
+    _render_completed_run(run, process_id)
 elif st.session_state["trigger_history"]:
     st.subheader("Recent triggers this session")
     for entry in st.session_state["trigger_history"][:5]:
-        st.markdown(
-            f"- `{entry['run_id']}` — started {entry['started']}  "
-            f"{'· payload sent' if entry.get('payload') else ''}"
-        )
+        st.markdown(f"- `{entry['run_id']}` — started {entry['started']}")
 else:
     st.info("Click **Run new scan** to start a process run.")

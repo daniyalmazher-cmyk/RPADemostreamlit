@@ -11,7 +11,6 @@ import streamlit as st
 
 from app_lib.ksa_data import ControlRoomSource as KsaSource
 from app_lib.ksa_view import (
-    render_architecture as render_ksa_architecture,
     render_audit as render_ksa_audit,
     render_detail as render_ksa_detail,
     render_queue as render_ksa_queue,
@@ -238,8 +237,8 @@ if is_ksa_run:
             st.stop()
 
     st.success(f"Loaded KSA run with {len(ksa_df)} applications.")
-    queue_tab, detail_tab, audit_tab, arch_tab = st.tabs(
-        ["Application Queue", "Application Detail", "Audit Log", "Architecture"]
+    queue_tab, detail_tab, audit_tab = st.tabs(
+        ["Application Queue", "Application Detail", "Audit Log"]
     )
     with queue_tab:
         render_ksa_queue(ksa_df)
@@ -247,8 +246,6 @@ if is_ksa_run:
         render_ksa_detail(ksa_source, ksa_df, run_id=selected_run_id)
     with audit_tab:
         render_ksa_audit(ksa_audit)
-    with arch_tab:
-        render_ksa_architecture()
 else:
     with st.spinner("Downloading report…"):
         try:

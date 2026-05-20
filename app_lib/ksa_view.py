@@ -19,13 +19,9 @@ from typing import Any, Union
 import pandas as pd
 import streamlit as st
 
-from .ksa_data import (
-    STATUS_ORDER,
-    ControlRoomSource,
-    FilesystemSource,
-)
+from .ksa_data import STATUS_ORDER, ControlRoomSource
 
-KsaSource = Union[FilesystemSource, ControlRoomSource]
+KsaSource = Union[ControlRoomSource]
 
 STATUS_COLORS = {
     "auto_approve": "#16a34a",
@@ -406,52 +402,3 @@ def render_audit(audit: dict[str, Any]) -> None:
         st.code("\n".join(lines), language="json")
 
 
-# -- Tab 4: Architecture -------------------------------------------------
-
-_ARCH_DIAGRAM = """```
-   ┌──────────────┐    ┌────────────┐    ┌────────────────┐    ┌──────────────┐    ┌────────────┐
-   │ Gmail IMAP   │ →  │ OCR        │ →  │ Field          │ →  │ KYC rules    │ →  │ CSV +      │
-   │ (UNSEEN +    │    │ Tesseract  │    │ extraction     │    │ + sanctions  │    │ per-app    │
-   │ subject)     │    │ or Claude  │    │ (regex)        │    │ screening    │    │ JSON +     │
-   └──────────────┘    └────────────┘    └────────────────┘    └──────────────┘    │ audit log  │
-                                                                                    └────────────┘
-```"""
-
-_ARCH_STAGES_TABLE = """
-| Stage | Module | Notes |
-|---|---|---|
-| Email intake | `libraries/email_source.py` | Gmail IMAP, App Password from Robocorp Vault. Mark-as-read on success. |
-| OCR | `libraries/ocr.py` | One-line swap between Tesseract (offline, free) and Claude vision (paid, higher Arabic accuracy). Selected by `OCR_ENGINE` env var. |
-| Field extraction | `libraries/id_extraction.py` | Regex over Tesseract text; handles Eastern-Arabic digit normalization. Skipped when Claude returns structured fields. |
-| Validation | `libraries/kyc_rules.py` | Saudi National ID checksum (10-digit, modified Luhn), expiry, age ≥ 18, name presence. |
-| Sanctions screen | `libraries/sanctions.py` | **Stubbed** — hardcoded list. Real deployment plugs in OFAC / UN / SAMA list + PEP feed here. |
-| Reporting | `libraries/reporting.py` | `applications.csv` (UTF-8 BOM, Arabic-safe) + per-app JSON + audit log. |
-"""
-
-_ARCH_INTEGRATION = """
-**Integration seams (production deployment):**
-
-- **CBS / core banking** — replace `reporting.write_application_record` with an API call.
-- **Sanctions screening** — swap the stub for an OFAC / UN / SAMA + PEP feed.
-- **Document storage** — currently `output/applications/<id>.json` + the original image; production goes to S3 / object storage with retention policies.
-- **Identity verification** — add face-liveness + selfie match as a parallel pipeline stage.
-- **Hijri / Gregorian** — Gregorian only today; production adds bidirectional conversion.
-"""
-
-_ARCH_POSTURE = """
-**Environment / posture talking points (for the bank IT-manager audience):**
-
-- Hermetic Python env via `conda.yaml` (Python 3.12, Tesseract 5.x, pinned pip deps).
-- One command setup: `rcc run`. No system-Python contamination.
-- All secrets in Robocorp Vault — no credentials in repo.
-- Append-only audit log per run, immutable after `finish()`.
-"""
-
-
-def render_architecture() -> None:
-    st.markdown("#### Pipeline")
-    st.markdown(_ARCH_DIAGRAM)
-    st.markdown("#### Stages")
-    st.markdown(_ARCH_STAGES_TABLE)
-    st.markdown(_ARCH_INTEGRATION)
-    st.markdown(_ARCH_POSTURE)
