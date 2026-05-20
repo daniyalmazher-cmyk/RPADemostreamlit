@@ -20,7 +20,7 @@ from app_lib.ksa_view import (
     render_detail as render_ksa_detail,
     render_queue as render_ksa_queue,
 )
-from app_lib.parsing import load_audit_log, load_report
+from app_lib.parsing import load_report
 from app_lib.report_view import render_full_report
 from app_lib.robocorp_client import ControlRoom, RobocorpConfig
 
@@ -119,7 +119,6 @@ def _render_completed_run(run: dict[str, Any], process_id: str) -> None:
     report = by_name.get("classification_report.json") or by_name.get(
         "classification_report.csv"
     )
-    audit_art = by_name.get("audit_log.json")
     is_ksa_run = "applications.csv" in by_name and not report
 
     if not report and not is_ksa_run:
@@ -157,16 +156,7 @@ def _render_completed_run(run: dict[str, Any], process_id: str) -> None:
         st.error(f"Failed to load report: {exc}")
         return
 
-    audit = None
-    if audit_art:
-        try:
-            audit = load_audit_log(
-                client.download_artifact(audit_art["step_run_id"], audit_art["id"])
-            )
-        except (httpx.HTTPError, ValueError) as exc:
-            st.warning(f"Could not load audit log: {exc}")
-
-    render_full_report(df, audit=audit)
+    render_full_report(df)
 
 
 def _ts() -> str:

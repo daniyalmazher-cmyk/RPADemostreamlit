@@ -15,7 +15,7 @@ from app_lib.ksa_view import (
     render_detail as render_ksa_detail,
     render_queue as render_ksa_queue,
 )
-from app_lib.parsing import load_audit_log, load_report
+from app_lib.parsing import load_report
 from app_lib.report_view import render_full_report
 from app_lib.robocorp_client import ControlRoom, RobocorpConfig
 
@@ -208,7 +208,6 @@ by_name = {a.get("name"): a for a in artifacts}
 report_artifact = by_name.get("classification_report.json") or by_name.get(
     "classification_report.csv"
 )
-audit_artifact = by_name.get("audit_log.json")
 is_ksa_run = "applications.csv" in by_name and not report_artifact
 
 if not report_artifact and not is_ksa_run:
@@ -260,29 +259,5 @@ else:
             st.error(f"Failed to load report: {exc}")
             st.stop()
 
-    audit: dict[str, Any] | None = None
-    if audit_artifact:
-        try:
-            raw_audit = _download(audit_artifact["step_run_id"], audit_artifact["id"])
-            audit = load_audit_log(raw_audit)
-        except (httpx.HTTPError, ValueError) as exc:
-            st.warning(f"Could not load audit log: {exc}")
-
     st.success(f"Loaded report from `{report_artifact['name']}` ({len(df)} files).")
-    render_full_report(df, audit=audit)
-
-with st.expander("Raw artifacts"):
-    st.dataframe(
-        pd.DataFrame(
-            [
-                {
-                    "name": a.get("name"),
-                    "size": a.get("size"),
-                    "id": a.get("id"),
-                }
-                for a in artifacts
-            ]
-        ),
-        width="stretch",
-        hide_index=True,
-    )
+    render_full_report(df)

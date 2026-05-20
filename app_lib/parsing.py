@@ -90,21 +90,6 @@ def load_report(raw: bytes | Any, *, name_hint: str | None = None) -> pd.DataFra
     return load_classification_csv(blob)
 
 
-def load_audit_log(raw: bytes | Any) -> dict[str, Any]:
-    payload = json.loads(_as_bytes(raw))
-    return payload
-
-
-def audit_events_to_df(audit: dict[str, Any]) -> pd.DataFrame:
-    events = audit.get("events", [])
-    if not events:
-        return pd.DataFrame(columns=["timestamp", "event", "payload"])
-    df = pd.DataFrame(events)
-    if "timestamp" in df.columns:
-        df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
-    return df
-
-
 def summarize(df: pd.DataFrame) -> dict[str, Any]:
     if df.empty:
         return {

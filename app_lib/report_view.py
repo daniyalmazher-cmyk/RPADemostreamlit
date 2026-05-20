@@ -6,17 +6,11 @@ downloaded a report, so the rendering lives here.
 
 from __future__ import annotations
 
-from typing import Any
-
 import pandas as pd
 import streamlit as st
 
 from . import charts
-from .parsing import (
-    DETECTION_KEYS,
-    audit_events_to_df,
-    summarize,
-)
+from .parsing import DETECTION_KEYS, summarize
 
 
 def render_summary_metrics(df: pd.DataFrame) -> None:
@@ -136,31 +130,9 @@ def _render_detection_detail(row: pd.Series) -> None:
             st.caption(f"…and {len(values) - 25} more")
 
 
-def render_audit_timeline(audit: dict[str, Any] | None) -> None:
-    if not audit:
-        return
-    st.subheader("Run timeline")
-    meta_cols = st.columns(3)
-    meta_cols[0].markdown(f"**Run ID**\n\n`{audit.get('run_id', '—')}`")
-    meta_cols[1].markdown(f"**Started**\n\n{audit.get('started_at', '—')}")
-    meta_cols[2].markdown(f"**Completed**\n\n{audit.get('completed_at', '—')}")
-
-    events = audit_events_to_df(audit)
-    if events.empty:
-        st.caption("No events recorded.")
-        return
-    st.dataframe(events, width="stretch", hide_index=True)
-
-
-def render_full_report(
-    df: pd.DataFrame,
-    audit: dict[str, Any] | None = None,
-) -> None:
+def render_full_report(df: pd.DataFrame) -> None:
     render_summary_metrics(df)
     st.divider()
     render_charts(df)
     st.divider()
     render_file_table(df)
-    if audit:
-        st.divider()
-        render_audit_timeline(audit)
