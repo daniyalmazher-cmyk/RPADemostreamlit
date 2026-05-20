@@ -18,6 +18,7 @@ from app_lib.report_view import render_full_report
 from app_lib.robocorp_client import ControlRoom, RobocorpConfig
 
 st.set_page_config(page_title="Cloud Runs", page_icon="cloud", layout="wide")
+st.logo("logo.png", size="large")
 st.title("Cloud Runs")
 st.caption("Browse recent runs of the discovery bot in Robocorp Control Room.")
 

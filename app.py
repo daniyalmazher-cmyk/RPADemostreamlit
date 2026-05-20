@@ -12,6 +12,7 @@ st.set_page_config(
     page_icon="bank",
     layout="wide",
 )
+st.logo("logo.png", size="large")
 
 st.title("RPA for Banking Operations")
 st.caption(

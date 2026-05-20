@@ -26,6 +26,7 @@ from app_lib.report_view import render_full_report
 from app_lib.robocorp_client import ControlRoom, RobocorpConfig
 
 st.set_page_config(page_title="Trigger Scan", page_icon="play", layout="wide")
+st.logo("logo.png", size="large")
 st.title("Trigger a new scan")
 st.caption("Kick off a process run in Robocorp Control Room and watch it complete.")
 
