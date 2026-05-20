@@ -48,20 +48,24 @@ def render_file_table(df: pd.DataFrame) -> None:
     classifications = [c for c in df["classification"].dropna().astype(str).unique()]
     file_types = sorted(df["file_type"].dropna().astype(str).unique().tolist())
 
+    # Stable keys — do NOT use id(df). The DataFrame is rebuilt on every
+    # script rerun (load_report() is not cached), so id(df) shifts each
+    # rerun, Streamlit sees the widget as fresh, and the user's selection
+    # is wiped on every interaction.
     filt_col1, filt_col2, filt_col3 = st.columns([2, 2, 3])
     with filt_col1:
         selected_classifications = st.multiselect(
             "Classification",
             options=classifications,
             default=classifications,
-            key=f"filt_class_{id(df)}",
+            key="dlp_filter_classification",
         )
     with filt_col2:
         selected_types = st.multiselect(
             "File type",
             options=file_types,
             default=file_types,
-            key=f"filt_type_{id(df)}",
+            key="dlp_filter_filetype",
         )
     with filt_col3:
         risk_min, risk_max = st.slider(
@@ -69,7 +73,7 @@ def render_file_table(df: pd.DataFrame) -> None:
             min_value=0,
             max_value=100,
             value=(0, 100),
-            key=f"filt_risk_{id(df)}",
+            key="dlp_filter_risk",
         )
 
     filtered = df[
@@ -96,7 +100,7 @@ def render_file_table(df: pd.DataFrame) -> None:
         # Sort by risk so the most-flagged file is the default selection.
         sorted_filtered = filtered.sort_values("risk_score", ascending=False)
         options = sorted_filtered["file_name"].tolist()
-        choice = st.selectbox("Pick a file", options=options, key=f"detail_{id(df)}")
+        choice = st.selectbox("Pick a file", options=options, key="dlp_detail_file")
         if choice:
             row = filtered[filtered["file_name"] == choice].iloc[0]
             _render_detection_detail(row)
