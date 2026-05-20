@@ -33,6 +33,8 @@ with st.sidebar:
 st.markdown("### What you can do")
 st.markdown(
     """
+- **KSA Account Opening** — review the Saudi account-opening bot's queue,
+  per-application detail (with Arabic RTL rendering), and audit log.
 - **Cloud Runs** — list recent runs of the discovery process, download artifacts,
   and render the same charts as the desktop bot.
 - **Trigger** — kick off a new scan in Control Room, watch it run, and view the
