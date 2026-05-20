@@ -34,21 +34,10 @@ def render_charts(df: pd.DataFrame) -> None:
         st.info("No files in this report.")
         return
 
-    left, right = st.columns(2)
+    st.subheader("Classification mix")
+    left, _ = st.columns([1, 1])
     with left:
-        st.subheader("Risk distribution")
-        st.plotly_chart(charts.risk_histogram(df), width="stretch")
-    with right:
-        st.subheader("Classification mix")
         st.plotly_chart(charts.classification_donut(df), width="stretch")
-
-    left2, right2 = st.columns(2)
-    with left2:
-        st.subheader("Detections by type")
-        st.plotly_chart(charts.detection_totals_bar(df), width="stretch")
-    with right2:
-        st.subheader("File types")
-        st.plotly_chart(charts.file_type_breakdown(df), width="stretch")
 
 
 def render_file_table(df: pd.DataFrame) -> None:
@@ -104,7 +93,9 @@ def render_file_table(df: pd.DataFrame) -> None:
 
     if not filtered.empty:
         st.subheader("Detection details")
-        options = filtered["file_name"].tolist()
+        # Sort by risk so the most-flagged file is the default selection.
+        sorted_filtered = filtered.sort_values("risk_score", ascending=False)
+        options = sorted_filtered["file_name"].tolist()
         choice = st.selectbox("Pick a file", options=options, key=f"detail_{id(df)}")
         if choice:
             row = filtered[filtered["file_name"] == choice].iloc[0]
@@ -112,19 +103,33 @@ def render_file_table(df: pd.DataFrame) -> None:
 
 
 def _render_detection_detail(row: pd.Series) -> None:
-    cols = st.columns(len(DETECTION_KEYS))
-    for col, key in zip(cols, DETECTION_KEYS):
+    """Show only the detection types that actually have hits in this file.
+
+    The previous 5-column layout always rendered every category, which
+    meant Public files showed five "—" cells and looked broken. Now we
+    skip empty categories and tell the user explicitly when there's nothing.
+    """
+    hits = []
+    for key in DETECTION_KEYS:
         values = row.get(f"{key}_values", [])
+        if not isinstance(values, list):
+            values = []
+        count = int(row.get(f"{key}_count", len(values)) or 0)
+        if count > 0:
+            hits.append((key, count, values))
+
+    if not hits:
+        st.info("No sensitive-data matches found in this file.")
+        return
+
+    for key, count, values in hits:
         label = key.replace("_", " ").upper()
-        with col:
-            st.markdown(f"**{label}** ({len(values) if isinstance(values, list) else 0})")
-            if isinstance(values, list) and values:
-                for v in values[:25]:
-                    st.code(str(v), language=None)
-                if len(values) > 25:
-                    st.caption(f"…and {len(values) - 25} more")
-            else:
-                st.caption("—")
+        suffix = "match" if count == 1 else "matches"
+        st.markdown(f"**{label}** — {count} {suffix}")
+        for v in values[:25]:
+            st.code(str(v), language=None)
+        if len(values) > 25:
+            st.caption(f"…and {len(values) - 25} more")
 
 
 def render_audit_timeline(audit: dict[str, Any] | None) -> None:
@@ -140,9 +145,7 @@ def render_audit_timeline(audit: dict[str, Any] | None) -> None:
     if events.empty:
         st.caption("No events recorded.")
         return
-    st.plotly_chart(charts.audit_timeline(events), width="stretch")
-    with st.expander("Raw events"):
-        st.dataframe(events, width="stretch", hide_index=True)
+    st.dataframe(events, width="stretch", hide_index=True)
 
 
 def render_full_report(
