@@ -60,19 +60,24 @@ def _download(step_run_id: str, artifact_id: str) -> bytes:
     return _client().download_artifact(step_run_id, artifact_id)
 
 
+# Colored-circle emoji renders consistently in both `st.markdown` and
+# `st.dataframe` cells, unlike Streamlit's `:color[label]` syntax which
+# only works inside markdown. Covers every process-run state the Control
+# Room API can return; unknown states fall back to ⚪.
 STATE_BADGES = {
-    "new": ":blue[New]",
-    "in_progress": ":orange[Running]",
-    "completed": ":green[Completed]",
-    "unresolved": ":red[Failed]",
-    "stopping": ":orange[Stopping]",
+    "new":          "🔵 New",
+    "in_progress":  "🟡 Running",
+    "completed":    "🟢 Completed",
+    "unresolved":   "🔴 Failed",
+    "stopping":     "🟠 Stopping",
+    "stopped":      "⚫ Stopped",
 }
 
 
 def _format_state(state: str | None) -> str:
     if not state:
         return "—"
-    return STATE_BADGES.get(state, f"`{state}`")
+    return STATE_BADGES.get(state, f"⚪ {state}")
 
 
 def _format_duration(seconds: Any) -> str:
@@ -174,7 +179,7 @@ st.subheader("Inspect a run")
 options = runs_df["id"].tolist()
 labels = {
     rid: f"{rid[:8]}…  ·  {_format_started(runs_df.loc[runs_df['id'] == rid, 'started_at'].iloc[0])}"
-    f"  ·  {runs_df.loc[runs_df['id'] == rid, 'state'].iloc[0]}"
+    f"  ·  {_format_state(runs_df.loc[runs_df['id'] == rid, 'state'].iloc[0])}"
     for rid in options
 }
 selected_run_id = st.selectbox(
