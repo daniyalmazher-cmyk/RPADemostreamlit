@@ -43,19 +43,3 @@ otherwise-valid cards.
 Screens the extracted Arabic and English names against the internal
 sanctions list. Any match — even a partial one — auto-rejects the
 application. False positives go to operations to clear manually.
-
-## What is *not* a rule
-
-- **Document expiry** — the `expiry_gregorian` field is still extracted and
-  displayed on the dashboard, but it is no longer enforced as a rule. The
-  bot only verifies *who* the applicant is; expiry is reviewed downstream
-  during onboarding.
-- **Nationality, gender, place of issue** — extracted for the record but
-  not part of routing.
-
-## Where the rule code lives
-
-`libraries/kyc_rules.py` — one `check_*` function per rule, plus
-`evaluate(fields)` which runs them in order and rolls the results into a
-final `status`. The rule names in this document match the strings written
-to the CSV's `failed_rules` column verbatim.
