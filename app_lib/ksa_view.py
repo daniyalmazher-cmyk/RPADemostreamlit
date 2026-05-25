@@ -83,12 +83,11 @@ def render_queue(df: pd.DataFrame) -> None:
 
 # Column widths shared by the header and every row so they stay aligned.
 # Order: Processed, Source, ID number, Name (EN), Name (AR), Status,
-# Failed rules, Send Email button, Add to CRM button.
-_QUEUE_COL_WIDTHS = [1.4, 1.5, 1.1, 1.3, 1.3, 1.0, 1.2, 1.1, 1.1]
+# Failed rules.
+_QUEUE_COL_WIDTHS = [1.4, 1.5, 1.1, 1.3, 1.3, 1.0, 1.2]
 _QUEUE_HEADERS = [
     "Processed", "Source", "ID number",
     "Name (EN)", "Name (AR)", "Status", "Failed rules",
-    "", "",
 ]
 
 
@@ -103,11 +102,11 @@ def _render_queue_rows(df: pd.DataFrame) -> None:
         )
 
     # Data rows
-    for i, (_, row) in enumerate(df.iterrows()):
-        _render_queue_row(i, row)
+    for _, row in df.iterrows():
+        _render_queue_row(row)
 
 
-def _render_queue_row(i: int, row: pd.Series) -> None:
+def _render_queue_row(row: pd.Series) -> None:
     cols = st.columns(_QUEUE_COL_WIDTHS)
 
     cell_style = (
@@ -128,16 +127,3 @@ def _render_queue_row(i: int, row: pd.Series) -> None:
     cols[4].markdown(cell(render_arabic(row.get("name_ar", ""))), unsafe_allow_html=True)
     cols[5].markdown(cell(status_badge(str(row.get("status", "")))), unsafe_allow_html=True)
     cols[6].markdown(cell(failed_html), unsafe_allow_html=True)
-
-    # Action buttons — demo wiring uses st.toast. Real deployment would
-    # call an Exchange/Graph API for email and a CBS/CRM API for the
-    # second one.
-    name = row.get("name_en") or row.get("name_ar") or row.get("id_number", "this applicant")
-    email = row.get("source_email", "")
-
-    with cols[7]:
-        if st.button("Send Email", key=f"verify_{i}", width="stretch"):
-            st.toast(f"Verification email sent to {email or name}")
-    with cols[8]:
-        if st.button("Add to CRM", key=f"crm_{i}", width="stretch"):
-            st.toast(f"{name} appended to CRM")

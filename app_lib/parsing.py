@@ -29,7 +29,7 @@ def load_classification_json(raw: bytes | Any) -> pd.DataFrame:
     if not records:
         return pd.DataFrame(
             columns=[
-                "file_name", "file_path", "file_type", "classification",
+                "file_name", "file_type", "classification",
                 "risk_score", "cnic_count", "iban_count", "credit_card_count",
                 "email_count", "phone_count", "salary_indicator",
             ]
@@ -50,7 +50,6 @@ def load_classification_json(raw: bytes | Any) -> pd.DataFrame:
 
         row = {
             "file_name": rec.get("file_name"),
-            "file_path": rec.get("file_path"),
             "file_type": rec.get("file_type"),
             "classification": rec.get("classification"),
             "risk_score": rec.get("risk_score", 0),

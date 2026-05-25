@@ -42,7 +42,6 @@ def render_file_table(df: pd.DataFrame) -> None:
         "file_type",
         *[f"{k}_count" for k in DETECTION_KEYS if f"{k}_count" in df.columns],
         "salary_indicator",
-        "file_path",
     ]
     table_cols = [c for c in table_cols if c in df.columns]
     st.dataframe(df[table_cols], width="stretch", hide_index=True)
